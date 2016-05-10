@@ -152,10 +152,12 @@ public class VehicleAdapter {
     private final static short PORT_CAM  = 2001;
     private final static short PORT_DENM = 2002;
     private final static short PORT_ICLCM = 2010;
+    private final static short PORT_RNDM = 2009;
 
     /* Seconds for which the message is relevant. */
     public final static double CAM_LIFETIME_SECONDS = 0.9;
     public final static double iCLCM_LIFETIME_SECONDS = 0.9;
+    public final static double RNDM_LIFETIME_SECONDS = 0.9;
 
     /* Maximum size of the UDP buffer. Needs to be at least as large
      * as the maximum message size. */
@@ -166,6 +168,7 @@ public class VehicleAdapter {
     public static int simulink_cam_port = 5000;
     public static int simulink_denm_port = 5000;
     public static int simulink_iclcm_port = 5000;
+    public static int simulink_rndm_port = 5000;
     public static InetAddress simulink_address;
 
 
@@ -183,10 +186,12 @@ public class VehicleAdapter {
     private static int num_tx_cam = 0;
     private static int num_tx_denm = 0;
     private static int num_tx_iclcm= 0;
+    private static int num_tx_rndm = 0;    
     private static int num_rx_cam = 0;
     private static int num_rx_denm = 0;
-    private static int num_rx_iclcm= 0;            
-    private Runnable printStatistics = new Runnable() {            
+    private static int num_rx_iclcm = 0;
+    private static int num_rx_rndm = 0;
+    private Runnable printStatistics = new Runnable() {
             @Override public void run() {
                 try{
                     Thread.sleep(1000);
@@ -198,7 +203,8 @@ public class VehicleAdapter {
                                    "\nVehicle Control System IP is " + simulink_address +
                                    "\nSending incoming CAM to port " + simulink_cam_port +
                                    "\nSending incoming DENM to port " + simulink_denm_port + 
-                                   "\nSending incoming iCLCM to port " + simulink_iclcm_port+
+                                   "\nSending incoming iCLCM to port " + simulink_iclcm_port +
+                                   "\nSending incoming RNDM to port " + simulink_rndm_port +
                                    "\nCopyright: Albin Severinson (albin@severinson.org) License: Apache 2.0" +
                                    "\nNotice: GeoNetworking library by Alexey Voronov" +
                                    "\n");
@@ -209,8 +215,8 @@ public class VehicleAdapter {
                     } catch(InterruptedException e) {
                         logger.warn("Interrupted during sleep.");
                     }
-                    logger.info("#CAM (Tx/Rx): {}/{}\t#DENM (Tx/Rx): {}/{}\t#iCLCM (Tx/Rx): {}/{}",
-                                num_tx_cam,num_rx_cam,num_tx_denm,num_rx_denm,num_tx_iclcm,num_rx_iclcm);                    
+                    logger.info("#CAM (Tx/Rx): {}/{}\t#DENM (Tx/Rx): {}/{}\t#iCLCM (Tx/Rx): {}/{}\t#RNDM (Tx/Rx): {}/{}",
+                                num_tx_cam,num_rx_cam,num_tx_denm,num_rx_denm,num_tx_iclcm,num_rx_iclcm,num_tx_rndm,num_rx_rndm);
                 }
             }
         };
@@ -230,7 +236,7 @@ public class VehicleAdapter {
                                                                  packet.getOffset(),
                                                                  packet.getOffset() + packet.getLength());
                         assert (receivedData.length == packet.getLength());
-                        logger.debug("Received packet from vehicle control! ID: " + receivedData[0] + " Data: " + receivedData);
+                        logger.debug(") Received packet from vehicle control! ID: " + receivedData[0] + " Data: " + receivedData);
 
                         /*
                         executor.submit(new UdpParser(Arrays.copyOfRange(packet.getData(),
@@ -256,7 +262,7 @@ public class VehicleAdapter {
                             num_tx_denm++;
                             try{
                                 LocalDenm localDenm = new LocalDenm(receivedData);
-                                Denm denm = localDenm.asDenm();                        
+                                Denm denm = localDenm.asDenm();
 
                                 /* TODO: How does GeoNetworking addressing work in
                                  * GCDC16? For now let's just broadcast
@@ -278,6 +284,12 @@ public class VehicleAdapter {
                             }catch(IllegalArgumentException e){
                                 logger.error("Irrecoverable error when creating iCLCM. Ignoring message.", e);
                             }
+                            break;
+                        }
+
+                        case 9: { // RNDM
+                            num_tx_rndm++;
+                            send(receivedData);
                             break;
                         }
                         
@@ -418,6 +430,18 @@ public class VehicleAdapter {
                 break;
             }
 
+            case PORT_RNDM: {
+                num_rx_rndm++;
+                packet.setData(btpPacket.payload(),0,btpPacket.payload().length);
+                packet.setPort(simulink_rndm_port);
+
+                try {
+                    rcvSocket.send(packet);                                
+                } catch(IOException e) {
+                    logger.warn("Failed to send RNDM to Simulink", e);
+                }                
+            }
+
             default:
                 //fallthrough
             }
@@ -473,6 +497,15 @@ public class VehicleAdapter {
         }        
     }
 
+    private void send(byte[] bytes){
+        BtpPacket packet = BtpPacket.singleHop(bytes, PORT_RNDM, RNDM_LIFETIME_SECONDS);
+        try {
+            btpSocket.send(packet);
+        } catch (IOException e) {
+            logger.warn("Failed to send RNDM", e);
+        }        
+    }    
+
     public static class SocketAddressFromString {  // Public, otherwise JewelCLI can't access it!
         private final InetSocketAddress address;
 
@@ -499,6 +532,7 @@ public class VehicleAdapter {
         @Option int getPortSendCam();
         @Option int getPortSendDenm();
         @Option int getPortSendIclcm();
+        @Option int getPortSendRndm();
 
         /* IP of Simulink */
         @Option String getSimulinkAddress();
@@ -600,6 +634,7 @@ public class VehicleAdapter {
         simulink_cam_port = opts.getPortSendCam();
         simulink_denm_port = opts.getPortSendDenm();
         simulink_iclcm_port = opts.getPortSendIclcm();
+        simulink_rndm_port = opts.getPortSendRndm();
 
         /* Create the vehicle adapter. */
         VehicleAdapter va = new VehicleAdapter(opts.getPortRcvFromSimulink(), config, linkLayer, vehiclePositionProvider, senderMac);
