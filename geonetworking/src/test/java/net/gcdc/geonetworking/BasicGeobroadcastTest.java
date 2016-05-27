@@ -17,6 +17,9 @@ public class BasicGeobroadcastTest {
 
     @Test(timeout=3000)
     public void test() throws IOException, InterruptedException {
+        /* Location filtering removed in this branch. */
+        
+        /*
         final Position slottsberget   = new Position(57.702878, 11.927723);
         final Position damen          = new Position(57.703864, 11.945876);
         final Position sannegordshamn = new Position(57.708769, 11.927088);
@@ -140,6 +143,7 @@ public class BasicGeobroadcastTest {
         receiverJarntorget.join();
         assertEquals(exceptionsJarntorget.size(), 1);
         assertEquals(exceptionsJarntorget.get(0).getClass(), InterruptedException.class);
+        */
     }
 
 }
